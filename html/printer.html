@@ -1,0 +1,171 @@
+<!doctype html>
+
+<html>
+  <head>
+    <title>Printer</title>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1, user-scalable=yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <style>
+      .container{
+        width: 100% !important;
+        text-align: center !important;
+      }
+      #connect{
+        background-color: #0055ff;
+        color: white;
+        border: none; 
+        margin: auto;
+        font-weight: bold;
+        height: 100px;
+        border-radius: 15%; 
+      }
+      .desconectado{
+        background-color:tomato;
+        height: 80px;
+        width: 80px;
+        border-radius: 50%;
+        margin: auto;
+        margin-top: 20px;
+        display: block;
+      }
+      .conectado{
+        background-color:yellowgreen;
+        height: 80px;
+        width: 80px;
+        border-radius: 50%;
+        margin: auto;
+        margin-top: 20px;
+        display: none;
+      }
+      .dispositivo{
+        font-family: Arial, Helvetica, sans-serif;
+        color: black;
+        font-weight: bold;
+        text-align: center;
+      }
+      input[type="text"]{
+        border: 1px solid blue;
+        border-radius: 5px;
+        font-weight: bold;
+        font: black;
+        padding: 3px;
+      }
+      input[type="text"]:focus{
+        outline: none;
+        box-shadow: 0 0 0 1pt blue;
+        
+      }
+    </style>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+
+    <body>
+      <div class="container">
+        <input type="text" id="texto" placeholder="Texto para imprimir" value=""\><br><br>
+        <button id="connect" type="button" >IMPRIMIR</button>
+        <div class="desconectado"></div>
+        <div class="conectado"></div>
+        <div class="dispositivo">Desconectado</div>
+      </div>
+    </body>
+
+    <script>
+      var printCharacteristic;
+      var textoParaImprimir = "";
+      var promessa;
+      
+      $(document).on("keyup", function(event){
+        if(event.keyCode == 13){
+          $("#connect").click();
+        }
+      });
+
+      $("#connect").on('click',function () {
+        if (printCharacteristic == null){
+
+         promessa = navigator.bluetooth.requestDevice({
+            filters: [{
+              services: ['000018f0-0000-1000-8000-00805f9b34fb']
+            }]
+        })
+        .then( device => {
+          $(".desconectado").css("display","none");
+          $(".conectado").css("display","block");
+          $(".dispositivo").text(device.name);
+          return device.gatt.connect().catch(error => {  
+            $(".desconectado").css("display","block");
+            $(".conectado").css("display","none");
+            $(".dispositivo").text("Desconectado");
+            printCharacteristic = null;
+            throw error.message;
+          })
+        })
+        .then(server => 
+         server.getPrimaryService("000018f0-0000-1000-8000-00805f9b34fb")
+        )
+        .then(service =>
+          service.getCharacteristic("00002af1-0000-1000-8000-00805f9b34fb")
+        )
+        .then(characteristic => {
+          // Cache the characteristic to not connect too many times, at least one to page load
+          printCharacteristic = characteristic; 
+          
+          var encoder = new TextEncoder("utf-8");
+          // here it will print just 20 char at maximum
+          var encoded = encoder.encode('\u001B'+'\u0021'+'\u0000'+$("#texto").val()+'\x0A');
+          
+          characteristic.writeValue(encoded).then(() => {
+            console.log('...');
+          });
+        })
+        .catch(function(error) {
+          $(".desconectado").css("display","block");
+          $(".conectado").css("display","none");
+          $(".dispositivo").text("Conexão falhou");
+          printCharacteristic = null;
+          console.log(error.message);
+        });
+      }
+      else{
+        var encoder = new TextEncoder("utf-8");
+        var encoded = encoder.encode('\u001B\u0021\u0000');
+        printCharacteristic.writeValue(encoded).catch(e => {
+            printCharacteristic = null;
+            alert("A impressora parece estar fora de alcance");
+          }
+        );
+        var texto = $("#texto").val();
+        var letras = texto.match(/.{1,18}/g);
+
+        const sleep = ms => {
+          return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        const setArrayToPrint = letra => {
+          return sleep(500).then(v => {
+            console.log(letra)
+            printCharacteristic.writeValue(letra).catch(e => {
+              printCharacteristic = null;
+              alert("A impressora parece estar fora de alcance");
+            });
+          });
+        }
+
+        const escposprint = async _ => {
+          for (const [id,letra] of letras.entries()) {
+            encoded = encoder.encode(letra);
+            const todo = await setArrayToPrint(encoded);
+            console.log(todo);
+          }
+          encoded = encoder.encode("\n");
+          await setArrayToPrint(encoded);
+        }
+        escposprint();
+      }
+    });
+    </script>
+    
+  </body>
+</html>
